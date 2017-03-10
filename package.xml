@@ -29,7 +29,7 @@
 -->
 
 <package format="2">
-  <name>ceres-solver</name>
+  <name>ceres_solver</name>
   <version>1.12.0</version>
   <description>A large scale non-linear optimization library.</description>
   <maintainer email="ceres-solver@googlegroups.com">
@@ -38,7 +38,7 @@
   <license>New BSD</license>
   <url type="website">http://ceres-solver.org/</url>
 
-  <buildtool_depend>catkin</buildtool_depend>
+  <buildtool_depend>ament_cmake</buildtool_depend>
 
   <depend>atlas</depend>
   <depend>eigen</depend>
@@ -48,6 +48,6 @@
   <depend>suitesparse</depend>
 
   <export>
-    <build_type>cmake</build_type>
+    <build_type>ament_cmake</build_type>
   </export>
 </package>
