@@ -48,6 +48,13 @@ class TripletSparseMatrix;
 
 class CompressedRowSparseMatrix : public SparseMatrix {
  public:
+  enum StorageType {
+    UNSYMMETRIC,
+    LOWER_TRIANGULAR,
+    UPPER_TRIANGULAR
+  };
+
+
   // Build a matrix with the same content as the TripletSparseMatrix
   // m. TripletSparseMatrix objects are easier to construct
   // incrementally, so we use them to initialize SparseMatrix
@@ -102,18 +109,7 @@ class CompressedRowSparseMatrix : public SparseMatrix {
 
   void ToCRSMatrix(CRSMatrix* matrix) const;
 
-  // Low level access methods that expose the structure of the matrix.
-  const int* cols() const { return &cols_[0]; }
-  int* mutable_cols() { return &cols_[0]; }
-
-  const int* rows() const { return &rows_[0]; }
-  int* mutable_rows() { return &rows_[0]; }
-
-  const std::vector<int>& row_blocks() const { return row_blocks_; }
-  std::vector<int>* mutable_row_blocks() { return &row_blocks_; }
-
-  const std::vector<int>& col_blocks() const { return col_blocks_; }
-  std::vector<int>* mutable_col_blocks() { return &col_blocks_; }
+  CompressedRowSparseMatrix* Transpose() const;
 
   // Destructive array resizing method.
   void SetMaxNumNonZeros(int num_nonzeros);
@@ -122,10 +118,32 @@ class CompressedRowSparseMatrix : public SparseMatrix {
   void set_num_rows(const int num_rows) { num_rows_ = num_rows; }
   void set_num_cols(const int num_cols) { num_cols_ = num_cols; }
 
-  void SolveLowerTriangularInPlace(double* solution) const;
-  void SolveLowerTriangularTransposeInPlace(double* solution) const;
+  // Low level access methods that expose the structure of the matrix.
+  const int* cols() const { return &cols_[0]; }
+  int* mutable_cols() { return &cols_[0]; }
 
-  CompressedRowSparseMatrix* Transpose() const;
+  const int* rows() const { return &rows_[0]; }
+  int* mutable_rows() { return &rows_[0]; }
+
+  const StorageType storage_type() const { return storage_type_; }
+  void set_storage_type(const StorageType storage_type) {
+    storage_type_ = storage_type;
+  }
+
+  const std::vector<int>& row_blocks() const { return row_blocks_; }
+  std::vector<int>* mutable_row_blocks() { return &row_blocks_; }
+
+  const std::vector<int>& col_blocks() const { return col_blocks_; }
+  std::vector<int>* mutable_col_blocks() { return &col_blocks_; }
+
+  const std::vector<int>& block_offsets() const { return block_offsets_; }
+  std::vector<int>* mutable_block_offsets() { return &block_offsets_; }
+
+  const std::vector<int>& crsb_rows() const { return crsb_rows_; }
+  std::vector<int>* mutable_crsb_rows() { return &crsb_rows_; }
+
+  const std::vector<int>& crsb_cols() const { return crsb_cols_; }
+  std::vector<int>* mutable_crsb_cols() { return &crsb_cols_; }
 
   static CompressedRowSparseMatrix* CreateBlockDiagonalMatrix(
       const double* diagonal,
@@ -135,8 +153,8 @@ class CompressedRowSparseMatrix : public SparseMatrix {
   // and create a CompressedRowSparseMatrix corresponding to it.
   //
   // Also compute a "program" vector, which for every term in the
-  // outer product points to the entry in the values array of the
-  // result matrix where it should be accumulated.
+  // block outer product provides the information for the entry
+  // in the values array of the result matrix where it should be accumulated.
   //
   // This program is used by the ComputeOuterProduct function below to
   // compute the outer product.
@@ -145,8 +163,12 @@ class CompressedRowSparseMatrix : public SparseMatrix {
   // same sparsity structure, the program only stores the result for
   // one row per row block. The ComputeOuterProduct function reuses
   // this information for each row in the row block.
+  //
+  // storage_type controls the form of the output matrix. It can be
+  // LOWER_TRIANGULAR or UPPER_TRIANGULAR.
   static CompressedRowSparseMatrix* CreateOuterProductMatrixAndProgram(
       const CompressedRowSparseMatrix& m,
+      const StorageType storage_type,
       std::vector<int>* program);
 
   // Compute the values array for the expression m.transpose() * m,
@@ -163,6 +185,7 @@ class CompressedRowSparseMatrix : public SparseMatrix {
   std::vector<int> rows_;
   std::vector<int> cols_;
   std::vector<double> values_;
+  StorageType storage_type_;
 
   // If the matrix has an underlying block structure, then it can also
   // carry with it row and column block sizes. This is auxilliary and
@@ -172,8 +195,55 @@ class CompressedRowSparseMatrix : public SparseMatrix {
   std::vector<int> row_blocks_;
   std::vector<int> col_blocks_;
 
+  // For outer product matrix (J' * J), we pre-compute its block
+  // offsets information here for fast outer product computation in
+  // block unit.  Since the outer product matrix is symmetric, we do
+  // not need to distinguish row or col block. In another word, this
+  // is the prefix sum of row_blocks_/col_blocks_.
+  std::vector<int> block_offsets_;
+
+  // If the matrix has an underlying block structure, then it can also
+  // carry with it compressed row sparse block information.
+  std::vector<int> crsb_rows_;
+  std::vector<int> crsb_cols_;
+
   CERES_DISALLOW_COPY_AND_ASSIGN(CompressedRowSparseMatrix);
 };
+
+// Options struct to control the generation of random block sparse
+// matrices in compressed row sparse format.
+//
+// The random matrix generation proceeds as follows.
+//
+// First the row and column block structure is determined by
+// generating random row and column block sizes that lie within the
+// given bounds.
+//
+// Then we walk the block structure of the resulting matrix, and with
+// probability block_density detemine whether they are structurally
+// zero or not. If the answer is no, then we generate entries for the
+// block which are distributed normally.
+struct RandomMatrixOptions {
+  int num_row_blocks;
+  int min_row_block_size;
+  int max_row_block_size;
+  int num_col_blocks;
+  int min_col_block_size;
+  int max_col_block_size;
+
+  // 0 <= block_density <= 1 is the probability of a block being
+  // present in the matrix. A given random matrix will not have
+  // precisely this density.
+  double block_density;
+};
+
+// Create a random CompressedRowSparseMatrix whose entries are
+// normally distributed and whose structure is determined by
+// RandomMatrixOptions.
+//
+// Caller owns the result.
+CompressedRowSparseMatrix* CreateRandomCompressedRowSparseMatrix(
+    const RandomMatrixOptions& options);
 
 }  // namespace internal
 }  // namespace ceres
