@@ -88,7 +88,7 @@ set(CMAKE_DEBUG_POSTFIX "-debug")
 include(ReadCeresVersionFromSource)
 read_ceres_version_from_source(${Ceres_SOURCE_DIR})
 
-enable_testing()
+#enable_testing()
 
 option(MINIGLOG "Use a stripped down version of glog." OFF)
 option(GFLAGS "Enable Google Flags." ON)
@@ -132,7 +132,7 @@ if (NOT MSVC)
 endif(NOT MSVC)
 option(EXPORT_BUILD_DIR
   "Export build directory using CMake (enables external use without install)." OFF)
-option(BUILD_TESTING "Enable tests" ON)
+option(BUILD_TESTING "Enable tests" OFF)
 option(BUILD_DOCUMENTATION "Build User's Guide (html)" OFF)
 option(BUILD_EXAMPLES "Build examples" ON)
 option(BUILD_SHARED_LIBS "Build Ceres as a shared library." OFF)
